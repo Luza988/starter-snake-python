@@ -10,7 +10,6 @@
 # To get you started we've included code to prevent your Battlesnake from moving backwards.
 # For more info see docs.battlesnake.com
 
-import random
 import typing
 import Map
 import time
@@ -28,7 +27,7 @@ def info() -> typing.Dict:
     return {
         "apiversion": "1",
         "author": "Luza988",  # TODO: Your Battlesnake Username
-        "color": "#808080",  # TODO: Choose color
+        "color": "#222222",  # TODO: Choose color
         "head": "default",  # TODO: Choose head
         "tail": "default",  # TODO: Choose tail
     }
@@ -50,14 +49,9 @@ def end(game_state: typing.Dict):
 def move(game_state: typing.Dict) -> typing.Dict:
     start_time = time.time()
     print("turn:", game_state["turn"])
+    arena.update_map(game_state)
     if game_state["turn"] == 0:
-        arena.setup(game_state["board"]["width"], game_state)
-        arena.set_food(game_state["board"]["food"])
-        arena.set_snakes(game_state["board"]["snakes"])
         print("initialized :", time.time() - start_time)
-    else:
-        arena.update_map(game_state)
-        last_Request = game_state
     next_move = arena.next_step(game_state["you"]["head"])
 
 
