@@ -42,18 +42,21 @@ class Map:
       if self.last_Request["you"]["health"] < 20:  # need food to survive
         self.map[food["x"]][food["y"]] = 3
         self.goals.add((food["x"], food["y"]))
-        
+
       else:  # add food depending on other snakes
-        my_distance = distance((food["x"], food["y"]),
-                               (self.last_Request["you"]["head"]["x"],
-                                self.last_Request["you"]["head"]["y"])) # distance to food
+        my_distance = distance(
+          (food["x"], food["y"]),
+          (self.last_Request["you"]["head"]["x"],
+           self.last_Request["you"]["head"]["y"]))  # distance to food
         min_snake_distance = 9999
         min_length = 0
         for snake in snakes:
           if snake["id"] == self.last_Request["you"]["id"]:
             continue
-          snake_distance = distance((food["x"], food["y"]),
-                                    (snake["head"]["x"], snake["head"]["y"])) # distance of other snake to food
+          snake_distance = distance(
+            (food["x"], food["y"]),
+            (snake["head"]["x"],
+             snake["head"]["y"]))  # distance of other snake to food
           if snake_distance < min_snake_distance or (  # snake closer than other snakes
               snake_distance ==
               min_snake_distance  # snake same distance as other snakes but longer
@@ -62,7 +65,8 @@ class Map:
             min_length = snake["length"]  # set new length
 
         if min_snake_distance > my_distance or (  # other snake further away
-            min_snake_distance == my_distance  # other snake has same distance but is shorter
+            min_snake_distance ==
+            my_distance  # other snake has same distance but is shorter
             and min_length < self.last_Request["you"]["length"]):
           self.map[food["x"]][food["y"]] = 3
           self.goals.add((food["x"], food["y"]))
@@ -85,7 +89,7 @@ class Map:
     for snake in snakes:
       bodys = snake["body"]
       # body other than tail
-      for i in range(snake["length"]):
+      for i in range(snake["length"] - 1):
         body = bodys[i]
         self.set_wall(body["x"], body["y"])
         if i == 0 and self.last_Request["you"]["head"] != body:
@@ -95,6 +99,8 @@ class Map:
           else:
             self.zone(body["x"], body["y"], -3)
       # tail
+      if self.last_Request["you"]["id"] != snake["id"]:  # never add own tail
+        continue
       dw = [-1, +1, 0, 0]
       dh = [0, 0, +1, -1]
       tail = False
@@ -130,9 +136,23 @@ class Map:
     copy = self.map.copy()
     print(np.rot90(copy, 1, (0, 1)))
     print("goal: ", self.goals)
-    path = self.astar((position["x"], position["y"]))
-    print(path)
-    ziel = path.pop()
+
+    # search goal
+    #print(position)
+    path1 = self.astar((position["x"], position["y"]))
+    ziel1 = path1.pop()
+    ziel = ziel1
+
+    # alternative goal
+    if len(self.goals)-1 > 0:
+      self.goals.discard(ziel)
+      path2 = self.astar((position["x"], position["y"]))
+      ziel2 = path2.pop()
+
+      # compare goals and return better one
+      if (len(path1) == len(path2)):
+        if self.map[ziel1[0]][ziel1[1]] < self.map[ziel2[0]][ziel2[1]]:
+          ziel = ziel2
     return self.direction(position, ziel)
 
   # Valid moves are "up", "down", "left", or "right"
@@ -144,12 +164,12 @@ class Map:
       if px == zx:
         if py > zy:
           return "down"
-        else:
+        elif py != zy:
           return "up"
       elif py == zy:
         if px > zx:
           return "left"
-        else:
+        elif px != zx:
           return "right"
 
     return self.valid_move()
@@ -161,11 +181,16 @@ class Map:
     dw = [-1, +1, 0, 0]
     dh = [0, 0, +1, -1]
     direction = ["left", "right", "up", "down"]
+    maxi = 0
+    max = -2000
     for i in range(4):
-      print(pos_x + dw[i], pos_y + dh[i])
-      if 0 <= pos_x + dw[i] < self.size and 0 <= pos_y + dh[
-          i] < self.size and self.map[pos_x + dw[i]][pos_y + dh[i]] > -999:
-        return direction[i]
+      if 0 <= pos_x + dw[i] < self.size and 0 <= pos_y + dh[  # if in bounds
+          i] < self.size and self.map[pos_x + dw[i]][
+            pos_y + dh[i]] > max:  # if cell has higher value than other cells
+        max = self.map[pos_x + dw[i]][pos_y + dh[i]]
+        maxi = i
+    #print(self.last_Request)
+    return direction[maxi]
 
   # A*
   def heuristic(self, position):
@@ -197,6 +222,7 @@ class Map:
     return min
 
   def astar(self, start):
+    found = False
     unvisited_nodes = PriorityQueue()
     unvisited_nodes.put(start, 0)
 
@@ -210,6 +236,7 @@ class Map:
       current = unvisited_nodes.get()
       if current in self.goals:
         print("found goal", (current[0], current[1]))
+        found = True
         break
 
       dw = [-1, +1, 0, 0]
@@ -229,13 +256,16 @@ class Map:
                                 priorität)
             visited_nodes[(current[0] + dw[i], current[1] + dh[i])] = current
 
-    path = self.make_path(visited_nodes, start, current)
+    if found:
+      path = self.make_path(visited_nodes, start, current)
+    else:
+      path = [start]
     return path
 
   def make_path(self, came_from, start, goal):
     path = [goal]
     if start == goal:
-      return [self.valid_move()]
+      return [start]
     nex = came_from[goal]
     while nex != start:
       path.append(nex)
@@ -249,7 +279,7 @@ class Map:
 def distance(position1, position2):
   px, py = position1
   zx, zy = position2
-  return abs(px - zx) + abs(py - zx)
+  return abs(px - zx) + abs(py - zy)
 
 
 #DeadEndFinder
