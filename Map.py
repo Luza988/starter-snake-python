@@ -1,43 +1,65 @@
 import numpy as np
-import heapq
 import sys
-
-
-class PriorityQueue:
-
-  def __init__(self):
-    self.elements = []
-
-  def empty(self):
-    return len(self.elements) == 0
-
-  def put(self, item, priority):
-    heapq.heappush(self.elements, (priority, item))
-
-  def get(self):
-    return heapq.heappop(self.elements)[1]
+import PriorityQueue
 
 
 class Map:
+  """Klasse um das Spielbrett zu repräsentieren:
+     - verwaltet die Map des Spiels,
+     - aktualisiert die Map,
+     - findet den nächsten Schritt und
+     - berechnet einen Pfad
+  """
 
   def __init__(self):
+    """initialisiert eine leere Map"""
     self.size = -1
     self.map = None
     self.path = []
     self.last_Request = None
     self.goals = set()
-
+  
   def setup(self, size, request):
+    """
+    belegt die Map mit der gegebenen Größe und den Daten von game_state
+    :param size: Größe des Spielfelds
+    :param request: Daten von game_state
+    """
     self.map = np.ones((size, size)).astype(int)
     self.size = size
     self.last_Request = request
     self.goals.clear()
 
   def set_wall(self, x, y):
+    """setzt eine Wand an gegebenen Koordinaten und wertet alle Felder um Wände ab
+    :param x: x-Koordinate
+    :param y: y-Koordinate 
+    """
     self.map[x][y] = -2000
     self.zone(x, y, -3)
 
+  def zone(self, pos_x, pos_y, value):
+    """wertet Zellen um die gegebene Koordinate auf/ab      um einen festen Wert
+    :param pos_x: x-Koordinate
+    :param pos_y: y-Koordinate
+    :param value: Wert, der auf/abgezählt wird
+    """
+    dw = [-1, +1, 0, 0]
+    dh = [0, 0, +1, -1]
+    for i in range(4):
+      if 0 <= pos_x + dw[i] < self.size and 0 <= pos_y + dh[
+          i] < self.size and self.map[pos_x + dw[i]][pos_y + dh[i]] > -999:
+        self.map[pos_x + dw[i]][pos_y + dh[i]] += value
+        if value == 3:
+          self.goals.add((pos_x + dw[i], pos_y + dh[i]))
+        elif (pos_x + dw[i], pos_y + dh[i]) in self.goals:
+          self.goals.discard((pos_x + dw[i], pos_y + dh[i]))
+
   def set_food(self, foodList, snakes):
+    """fügt abhängig von eigener Gesundheit und Entfernung anderer Schlangen Nahrung der Map hinzu
+    :param foodList: Liste der Nahrung
+    :param snakes: Liste der Schlangen
+    """
     for food in foodList:
       if self.last_Request["you"]["health"] < 20:  # need food to survive
         self.map[food["x"]][food["y"]] = 3
@@ -68,16 +90,23 @@ class Map:
             min_snake_distance ==
             my_distance  # other snake has same distance but is shorter
             and min_length < self.last_Request["you"]["length"]):
-          self.map[food["x"]][food["y"]] = 3
+          self.map[food["x"]][food["y"]] = 5
           self.goals.add((food["x"], food["y"]))
 
   def set_outer_rim(self):
+    """
+    setzt den äußeren begehbaren Rand der Karte als unvorteilhaft
+    """
     for i in range(self.size):
       for j in range(self.size):
         if j % (self.size - 1) == 0 or i % (self.size - 1) == 0:
-          self.map[i][j] += -4
+          self.map[i][j] += -self.last_Request["you"]["length"]
 
   def update_map(self, current_request):
+    """
+    aktualisiert die Karte basierendend auf dem aktuellen game_state
+    :param current_request: aktueller game_state
+    """
     self.setup(current_request["board"]["height"], current_request)
     self.set_outer_rim()
     self.set_snakes(current_request["board"]["snakes"],
@@ -86,6 +115,13 @@ class Map:
                   current_request["board"]["snakes"])
 
   def set_snakes(self, snakes, foods):
+    """
+    fügt alle Schlangen der Map hinzu und kennzeichnet deren Körper als unpassierbar
+     - der Tail einer Schlange bleibt passierbar, falls sie kein Food essen kann
+     - der eigene Tail bleibt immer passierbar
+    :param snakes: Liste der Schlangen
+    :param foods: Liste der Nahrung
+    """
     for snake in snakes:
       bodys = snake["body"]
       # body other than tail
@@ -96,8 +132,9 @@ class Map:
           if snake["length"] + 2 < self.last_Request["you"][
               "length"] and self.last_Request["you"]["health"] > 50:
             self.zone(body["x"], body["y"], 3)
-          else:
-            self.zone(body["x"], body["y"], -3)
+          elif snake["length"] >= self.last_Request["you"][
+          "length"]:
+            self.zone(body["x"], body["y"], -snake["length"]*5)
       # tail
       if self.last_Request["you"]["id"] != snake["id"]:  # never add own tail
         continue
@@ -120,31 +157,29 @@ class Map:
         self.set_wall(snake["body"][snake["length"] - 1]["x"],
                       snake["body"][snake["length"] - 1]["y"])  # add tail
 
-  def zone(self, pos_x, pos_y, value):
-    dw = [-1, +1, 0, 0]
-    dh = [0, 0, +1, -1]
-    for i in range(4):
-      if 0 <= pos_x + dw[i] < self.size and 0 <= pos_y + dh[
-          i] < self.size and self.map[pos_x + dw[i]][pos_y + dh[i]] > -999:
-        self.map[pos_x + dw[i]][pos_y + dh[i]] += value
-        if value == 3:
-          self.goals.add((pos_x + dw[i], pos_y + dh[i]))
-        elif (pos_x + dw[i], pos_y + dh[i]) in self.goals:
-          self.goals.discard((pos_x + dw[i], pos_y + dh[i]))
+  # --------------------------------- Schritt-Berechnung -------------------------------
 
   def next_step(self, position: dict):
+    """
+    berechnet bis zu zwei alternative Schritte von einer gegebenen Position und gibt den vorteilhafteren Schritt
+    :param position: Position der Battlesnake
+    :param game_state: aktueller game_state
+    """
     copy = self.map.copy()
     print(np.rot90(copy, 1, (0, 1)))
     print("goal: ", self.goals)
 
+    # there are no goals
+    if len(self.goals) == 0:
+      return self.valid_move()
+
     # search goal
-    #print(position)
     path1 = self.astar((position["x"], position["y"]))
     ziel1 = path1.pop()
     ziel = ziel1
 
     # alternative goal
-    if len(self.goals)-1 > 0:
+    if len(self.goals) - 1 > 0:
       self.goals.discard(ziel)
       path2 = self.astar((position["x"], position["y"]))
       ziel2 = path2.pop()
@@ -157,6 +192,11 @@ class Map:
 
   # Valid moves are "up", "down", "left", or "right"
   def direction(self, position: dict, ziel):
+    """
+    gibt die Richtung zum Ziel basierend auf der Aktuellen Position oder ein valid_move, wobei Richtungen: "up", "down", "left", "right"
+    :param position: Position der Battlesnake
+    :param ziel: Ziel der Battlesnake
+    """
     if ziel is not None:
       px = position["x"]
       py = position["y"]
@@ -175,6 +215,9 @@ class Map:
     return self.valid_move()
 
   def valid_move(self):
+    """
+    wählt für die eigene Position den best bewertesten Schritt
+    """
     snake_pos = self.last_Request["you"]["head"]
     pos_x = snake_pos["x"]
     pos_y = snake_pos["y"]
@@ -189,11 +232,14 @@ class Map:
             pos_y + dh[i]] > max:  # if cell has higher value than other cells
         max = self.map[pos_x + dw[i]][pos_y + dh[i]]
         maxi = i
-    #print(self.last_Request)
     return direction[maxi]
 
   # A*
   def heuristic(self, position):
+    """
+    Berechnet die Distanze zur nächsten Nahrung unter Betrachtung der Zellengewichte
+    :param position: Position der Battlesnake
+    """
     min = sys.maxsize
     for goal in self.goals:
       multp = 1
@@ -209,12 +255,14 @@ class Map:
         elif goal[1] < position[1]:
           dy = -1
 
+      # ermittle Zellengewicht
       value = self.map[position[0] + dx][position[1] + dy]
       if value > 0:
         multp = value / 10
       elif value != 0:
         multp = abs(value)
 
+      # ermittle minimale heuristische Distanz
       dis = multp * distance(position, goal)
       if dis < min:
         min = dis
@@ -222,8 +270,12 @@ class Map:
     return min
 
   def astar(self, start):
+    """
+    führt den A*-Algorithmus aus, um einen Pfad zum nächsten Ziel zu finden
+    :param start: Startposition der Battlesnake
+    """
     found = False
-    unvisited_nodes = PriorityQueue()
+    unvisited_nodes = PriorityQueue.PriorityQueue()
     unvisited_nodes.put(start, 0)
 
     visited_nodes = {}
@@ -263,6 +315,12 @@ class Map:
     return path
 
   def make_path(self, came_from, start, goal):
+    """
+    erstellt den Pfad vom Ziel zurück zum Start
+    :param came_from: Path, von dem man gekommen ist
+    :param start: Startposition der Battlesnake
+    :param goal: Ziel der Battlesnake
+    """
     path = [goal]
     if start == goal:
       return [start]
@@ -274,18 +332,27 @@ class Map:
 
 
 # Unabhängige Funktionen
-
-
 def distance(position1, position2):
+  """
+  berechnet die Manhattan-Distanz zwischen zwei Positionen
+  :param position1: Position 1
+  :param position2: Position 2
+  """
   px, py = position1
   zx, zy = position2
   return abs(px - zx) + abs(py - zy)
 
 
-#DeadEndFinder
+# ------------------------------------ Gedanken/Ideen ----------------------------------
 
 
+#DeadEndFinder - nicht verwendet
 def longest_path_finder(self, position, memory):
+  """
+  findet den längsten möglichen Weg von einer gegebenen Position
+  :param position: Position der Battlesnake
+  :param memory: Speicher für die bereits gefundenen Wege
+  """
   x, y = position
   if memory[x][y] > -1:
     return memory[x][y]
@@ -304,6 +371,3 @@ def longest_path_finder(self, position, memory):
       moves[3] = 1 + longest_path_finder(self, (x, y - 1))
   memory[x][y] = max(moves)
   return max(moves)
-
-
-#def dead_end(map, position):
