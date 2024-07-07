@@ -1,3 +1,11 @@
+"""
+Lucas Krüger, 222201036
+Henry Freyschmidt, 222201945
+Steven Zabel, 222200518
+Paula Krasnovska, 222200392
+Zana Salih Hama, 222200806
+"""
+
 import logging
 import os
 import typing

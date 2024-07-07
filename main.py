@@ -10,6 +10,14 @@
 # To get you started we've included code to prevent your Battlesnake from moving backwards.
 # For more info see docs.battlesnake.com
 
+"""
+Lucas Krüger, 222201036
+Henry Freyschmidt, 222201945
+Steven Zabel, 222200518
+Paula Krasnovska, 222200392
+Zana Salih Hama, 222200806
+"""
+
 import typing
 import Map
 import time
@@ -70,4 +78,3 @@ if __name__ == "__main__":
          "move": move, 
         "end": end
     })
-    
